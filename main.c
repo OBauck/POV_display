@@ -15,44 +15,59 @@
 #include "nrf_delay.h"
 #include "boards.h"
 #include "app_error.h"
-#include "nrf_drv_tlc5940.h"
+#include "nrf_drv_apa102.h"
+#include "POV_display.h"
+#include "nrf_drv_clock.h"
+#include "app_timer.h"
+#include "nrf_delay.h"
 
+static void lfclk_request(void)
+{
+	uint32_t err_code = nrf_drv_clock_init();
+    APP_ERROR_CHECK(err_code);
+    nrf_drv_clock_lfclk_request(NULL);
+}
 
 int main(void)
 {
-
-	nrf_drv_tlc5940_init();
-
-    while (1)
-    {
-		int direction = 1;
-        for (int channel = 0; channel < 16; channel += direction)
-		{
-			nrf_drv_tlc5940_clear();
-			
-			if (channel == 0) 
-			{
-				direction = 1;
-			} 
-			else 
-			{
-				nrf_drv_tlc5940_set(channel - 1, 1000);
-			}
-			
-			nrf_drv_tlc5940_set(channel, 4095);
-			
-			if (channel != 15) 
-			{
-				nrf_drv_tlc5940_set(channel + 1, 1000);
-			} 
-			else 
-			{
-				direction = -1;
-			}
-			
-			nrf_drv_tlc5940_update();
-			nrf_delay_ms(50);
-		}
-
-    }
+	NRF_POWER->TASKS_CONSTLAT = 1;
+	NRF_CLOCK->EVENTS_HFCLKSTARTED = 1;
+	NRF_CLOCK->TASKS_HFCLKSTART = 1;
+	while(NRF_CLOCK->EVENTS_HFCLKSTARTED == 0);
+	
+	lfclk_request();
+	APP_TIMER_INIT(APP_TIMER_PRESCALER, APP_TIMER_OP_QUEUE_SIZE, false);
+	
+	POV_display_init();
+	POV_display_put_string(0, "HELLO WORLD", PIXEL_RED);
+	
+	POV_display_clock_init((time_t){22,30,0}, false);
+	POV_display_clock_start();
+	
+	for(;;)
+	{
+		/*
+		POV_display_clear();
+		POV_display_put_string(0, "RED", PIXEL_RED);
+		nrf_delay_ms(2000);
+		POV_display_clear();
+		POV_display_put_string(0, "BLUE", PIXEL_BLUE);
+		nrf_delay_ms(2000);
+		POV_display_clear();
+		POV_display_put_string(0, "GREEN", PIXEL_GREEN);
+		nrf_delay_ms(2000);
+		POV_display_clear();
+		POV_display_put_string(0, "PURPLE", PIXEL_PURPLE);
+		nrf_delay_ms(2000);
+		POV_display_clear();
+		POV_display_put_string(0, "YELLOW", PIXEL_YELLOW);
+		nrf_delay_ms(2000);
+		POV_display_clear();
+		POV_display_put_string(0, "BLUEGREEN", PIXEL_BLUEGREEN);
+		nrf_delay_ms(2000);
+		POV_display_clear();
+		POV_display_put_string(0, "WHITE", PIXEL_WHITE);
+		nrf_delay_ms(2000);
+		*/
+	}
 }
