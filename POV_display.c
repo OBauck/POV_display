@@ -16,7 +16,7 @@
 
 #define NR_OF_UPDATES_PER_ROUND 180
 //#define LED_STRIP_ACROSS_CENTER
-#define FILTER_ALPHA	0.9f	//variable for the EMA filter on the display interval. Lower value means we trust more on the current measurement.
+#define FILTER_ALPHA	0.0f	//variable for the EMA filter on the display interval. Lower value means we trust more on the current measurement.
 
 #define HALL_EFFECT_PIN 	31
 #define LED_STRIP_DATA_PIN	3
@@ -40,8 +40,11 @@ static nrf_drv_timer_t timer_measure = NRF_DRV_TIMER_INSTANCE(4);
 
 static volatile float strip_display_interval = 220*16*240/NR_OF_UPDATES_PER_ROUND;
 
-stripe_t stripes[NR_OF_UPDATES_PER_ROUND];
-stripe_t stripes_buffered[NR_OF_UPDATES_PER_ROUND];
+static uint8_t buffer_in_use = 0;
+static bool m_buffer_updated = false;
+
+static stripe_t stripes_buffer_1[NR_OF_UPDATES_PER_ROUND];
+static stripe_t stripes_buffer_2[NR_OF_UPDATES_PER_ROUND];
 
 static volatile uint8_t stripe_counter = 0;
 
@@ -80,10 +83,22 @@ void in_pin_handler(nrf_drv_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
 	nrf_drv_timer_extended_compare(&timer_interval, (nrf_timer_cc_channel_t)0, (uint32_t)strip_display_interval, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, true);
 	nrf_drv_timer_clear(&timer_interval);
 	
-	memcpy(stripes, stripes_buffered, sizeof(stripes));
-	
 	stripe_counter = 0;
-	set_stripe(&stripes[stripe_counter], &stripes[(stripe_counter + NR_OF_UPDATES_PER_ROUND/2) % NR_OF_UPDATES_PER_ROUND]);
+	
+	if(m_buffer_updated == true)
+	{
+		buffer_in_use ^= 1;
+		m_buffer_updated = false;
+	}
+	
+	if(buffer_in_use == 0)
+	{
+		set_stripe(&stripes_buffer_1[stripe_counter], &stripes_buffer_1[(stripe_counter + NR_OF_UPDATES_PER_ROUND/2) % NR_OF_UPDATES_PER_ROUND]);
+	}
+	else
+	{
+		set_stripe(&stripes_buffer_2[stripe_counter], &stripes_buffer_2[(stripe_counter + NR_OF_UPDATES_PER_ROUND/2) % NR_OF_UPDATES_PER_ROUND]);
+	}
 	stripe_counter++;
 	
 	/*
@@ -98,7 +113,14 @@ void timer_interval_handler(nrf_timer_event_t event_type, void * p_context)
 {
 	if(stripe_counter < NR_OF_UPDATES_PER_ROUND)
 	{
-		set_stripe(&stripes[stripe_counter], &stripes[(stripe_counter + NR_OF_UPDATES_PER_ROUND/2) % NR_OF_UPDATES_PER_ROUND]);
+		if(buffer_in_use == 0)
+		{
+			set_stripe(&stripes_buffer_1[stripe_counter], &stripes_buffer_1[(stripe_counter + NR_OF_UPDATES_PER_ROUND/2) % NR_OF_UPDATES_PER_ROUND]);
+		}
+		else
+		{
+			set_stripe(&stripes_buffer_2[stripe_counter], &stripes_buffer_2[(stripe_counter + NR_OF_UPDATES_PER_ROUND/2) % NR_OF_UPDATES_PER_ROUND]);
+		}
 		stripe_counter++;
 	}
 }
@@ -192,25 +214,66 @@ void sync_timer_init()
 	nrf_drv_timer_enable(&timer_measure);
 }
 
+//this will update the display to use the next buffer
+void POV_display_update(void)
+{
+	m_buffer_updated = true;
+}
+
 void POV_display_clear(void)
 {
-	for(uint16_t i = 0; i < sizeof(stripes_buffered)/sizeof(stripe_t); i++)
+	if(m_buffer_updated == true)
 	{
-		memcpy(&stripes_buffered[i], &stripe_empty, sizeof(stripe_t));
+		return;		//TODO: error code
+	}
+	if(buffer_in_use == 0)
+	{
+		for(uint16_t i = 0; i < sizeof(stripes_buffer_2)/sizeof(stripe_t); i++)
+		{
+			memcpy(&stripes_buffer_2[i], &stripe_empty, sizeof(stripe_t));
+		}
+	}
+	else
+	{
+		for(uint16_t i = 0; i < sizeof(stripes_buffer_1)/sizeof(stripe_t); i++)
+		{
+			memcpy(&stripes_buffer_1[i], &stripe_empty, sizeof(stripe_t));
+		}
 	}
 }
 
 void POV_display_set_stripe(uint8_t stripe_nr, uint16_t stripe, pixel_t color)
 {
-	for(uint8_t i = 0; i < NR_OF_PIXELS; i++)
+	if(m_buffer_updated == true)
 	{
-		if((stripe << i) & 0x8000)
+		return;		//TODO: error code
+	}
+	if(buffer_in_use == 0)
+	{
+		for(uint8_t i = 0; i < NR_OF_PIXELS; i++)
 		{
-			memcpy(&stripes_buffered[stripe_nr].pixels[i], &color, sizeof(pixel_t));
+			if((stripe << i) & 0x8000)
+			{
+				memcpy(&stripes_buffer_2[stripe_nr].pixels[i], &color, sizeof(pixel_t));
+			}
+			else
+			{
+				memcpy(&stripes_buffer_2[stripe_nr].pixels[i], &pixel_off, sizeof(pixel_t));
+			}
 		}
-		else
+	}
+	else
+	{
+		for(uint8_t i = 0; i < NR_OF_PIXELS; i++)
 		{
-			memcpy(&stripes_buffered[stripe_nr].pixels[i], &pixel_off, sizeof(pixel_t));
+			if((stripe << i) & 0x8000)
+			{
+				memcpy(&stripes_buffer_1[stripe_nr].pixels[i], &color, sizeof(pixel_t));
+			}
+			else
+			{
+				memcpy(&stripes_buffer_1[stripe_nr].pixels[i], &pixel_off, sizeof(pixel_t));
+			}
 		}
 	}
 }
@@ -358,6 +421,7 @@ void POV_clock_timer_handler(void * p_context)
 	}
 	
     POV_display_clock(m_current_time, m_clock_analog);
+	POV_display_update();
 }
 
 void POV_display_clock_init(time_t time, bool analog)
@@ -390,5 +454,10 @@ void POV_display_clock_start(void)
 	
 	err_code = app_timer_start(m_POV_clock_timer_id, APP_TIMER_TICKS(1000, APP_TIMER_PRESCALER), NULL);
 	APP_ERROR_CHECK(err_code);
+}
+
+void POV_display_clock_stop(void)
+{
+	app_timer_stop(m_POV_clock_timer_id);
 }
 

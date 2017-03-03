@@ -20,6 +20,11 @@
 #include "nrf_drv_clock.h"
 #include "app_timer.h"
 #include "nrf_delay.h"
+#include "app_scheduler.h"
+#include "app_timer_appsh.h"
+
+#define SCHED_MAX_EVENT_DATA_SIZE APP_TIMER_SCHED_EVT_SIZE
+#define SCHED_QUEUE_SIZE                10
 
 static void lfclk_request(void)
 {
@@ -35,17 +40,21 @@ int main(void)
 	NRF_CLOCK->TASKS_HFCLKSTART = 1;
 	while(NRF_CLOCK->EVENTS_HFCLKSTARTED == 0);
 	
+	APP_SCHED_INIT(SCHED_MAX_EVENT_DATA_SIZE, SCHED_QUEUE_SIZE);
+	
 	lfclk_request();
-	APP_TIMER_INIT(APP_TIMER_PRESCALER, APP_TIMER_OP_QUEUE_SIZE, false);
+	APP_TIMER_APPSH_INIT(APP_TIMER_PRESCALER, APP_TIMER_OP_QUEUE_SIZE, true);
 	
 	POV_display_init();
 	POV_display_put_string(0, "HELLO WORLD", PIXEL_RED);
+	POV_display_update();
 	
 	POV_display_clock_init((time_t){22,30,0}, false);
 	POV_display_clock_start();
 	
 	for(;;)
 	{
+		app_sched_execute();
 		/*
 		POV_display_clear();
 		POV_display_put_string(0, "RED", PIXEL_RED);

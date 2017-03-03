@@ -32,6 +32,9 @@ uint32_t POV_display_put_string(uint8_t start_strip, char *str, pixel_t color);
 void POV_display_clock_init(time_t time, bool analog);
 void POV_display_clock_set_time(time_t time);
 void POV_display_clock_start(void);
+void POV_display_update(void);
+void POV_display_clock_stop(void);
+
 void POV_clock_timer_handler(void * p_context);
 
 #endif //POV_DISPLAY
